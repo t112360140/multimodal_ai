@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="models_name">
+        <item>gemma-3n-E2B-it</item>
+        <item>gemma-3n-E4B-it</item>
+        <item>Download-Test</item>
+    </string-array>
+
+    <string-array name="models_path">
+        <item>models/gemma-3n-E2B-it-int4.litertlm</item>
+        <item>models/gemma-3n-E4B-it-int4.litertlm</item>
+        <item>models/Readme.md</item>
+    </string-array>
+
+    <string-array name="models_url">
+        <item>https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/gemma-3n-E2B-it/gemma-3n-E2B-it-int4.litertlm</item>
+        <item>https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/gemma-3n-E4B-it/gemma-3n-E4B-it-int4.litertlm</item>
+        <item>https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/README.md</item>
+    </string-array>
+</resources>
