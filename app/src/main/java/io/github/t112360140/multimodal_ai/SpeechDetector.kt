@@ -1,71 +1,93 @@
 package io.github.t112360140.multimodal_ai
 
 import android.content.Context
+import android.util.Log
 import com.konovalov.vad.silero.Vad
+import com.konovalov.vad.silero.VadSilero
 import com.konovalov.vad.silero.config.FrameSize
 import com.konovalov.vad.silero.config.Mode
 import com.konovalov.vad.silero.config.SampleRate
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.io.File
+import java.util.concurrent.Executors
+import kotlin.concurrent.thread
 
 /**
- * 負責管理 VAD 邏輯、累積音訊，並在使用者說完話後回傳完整數據。
+ * 負責管理 VAD 邏輯、串流音訊進行即時辨識。
+ * 採用真正的串流模式，將音訊區塊即時送入 Whisper 引擎。
  */
-class SpeechDetector(context: Context) : VoiceRecorder.AudioCallback {
+class SpeechDetector(context: Context, model: String) : VoiceRecorder.AudioCallback {
 
-    // --- 設定參數 ---
-    // Gemma 模型與多數 ASR 模型皆使用 16kHz
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // 建立一個單一線程的 dispatcher，確保 Whisper 任務循序執行
+    private val whisperDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+
+    // --- VAD 設定 ---
     private val SAMPLE_RATE = SampleRate.SAMPLE_RATE_16K
-    // Frame size: 16kHz 下，1024 samples = 64ms
     private val FRAME_SIZE = FrameSize.FRAME_SIZE_1024
     private val MODE = Mode.VERY_AGGRESSIVE
-
-    // 這些參數給 Builder 使用，雖然我們自己也實作了計數邏輯，但設定給 VAD 內部參考也無妨
     private val SILENCE_DURATION_MS = 300
     private val SPEECH_DURATION_MS = 50
 
-    // --- 自定義邏輯參數 ---
-    // 設定多少毫秒的靜音視為一句話真正結束 (例如 800ms)
-    private val PAUSE_THRESHOLD_MS = 300
-    // 計算一 Frame 有多少毫秒 (1024 / 16000 * 1000 = 64ms)
+    // --- 語音結束邏輯參數 ---
+    private val PAUSE_THRESHOLD_MS = 800
     private val FRAME_DURATION_MS = FRAME_SIZE.value * 1000 / SAMPLE_RATE.value
-    // 計算需要多少個連續靜音 Frame (300 / 64 ~= 4 frames)
     private val MAX_SILENCE_FRAMES = PAUSE_THRESHOLD_MS / FRAME_DURATION_MS
 
-    // --- VAD 初始化 ---
-    // 直接使用 Builder，不需要 Context，Library 會自動載入 .so 檔
-    private var vad = Vad.builder()
-        .setContext(context)
-        .setSampleRate(SAMPLE_RATE)
-        .setFrameSize(FRAME_SIZE)
-        .setMode(MODE)
-        .setSilenceDurationMs(SILENCE_DURATION_MS)
-        .setSpeechDurationMs(SPEECH_DURATION_MS)
-        .build()
+    // --- Whisper 串流參數 ---
+    private val audioBuffer = mutableListOf<Float>()
+    // 根據 whisper.cpp stream 範例，設定一個處理步長
+    private val AUDIO_STEP_MS = 3000
+    private val AUDIO_STEP_SAMPLES = (AUDIO_STEP_MS / 1000f * SAMPLE_RATE.value).toInt()
 
+
+    private var vad: VadSilero
     private val recorder = VoiceRecorder(this)
+    private var whisperContext: WhisperContext? = null
 
     // --- 狀態管理 ---
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking = _isSpeaking.asStateFlow()
-
     private var silenceFrameCount = 0
     private var hasSpeechStarted = false
 
-    // 用來累積一句話的完整音訊
-    private val audioBuffer = ByteArrayOutputStream()
-
-    // 回調介面：當一句話完整結束時觸發
-    var onSpeechCompleted: ((ByteArray) -> Unit)? = null
-
+    // --- 回調介面 ---
+    var onDone: (() -> Unit)? = null
+    var onSpeechTranscribed: ((String) -> Unit)? = null
     var onSpeechStart: (() -> Unit)? = null
+    var onSpeechCompleted: (() -> Unit)? = null
+
+
+    init {
+        vad = Vad.builder()
+            .setContext(context)
+            .setSampleRate(SAMPLE_RATE)
+            .setFrameSize(FRAME_SIZE)
+            .setMode(MODE)
+            .setSilenceDurationMs(SILENCE_DURATION_MS)
+            .setSpeechDurationMs(SPEECH_DURATION_MS)
+            .build()
+
+        thread {
+            val modelPath = File(context.getExternalFilesDir(null), model).absolutePath
+            // 注意：這裡現在應該使用新的 init 方法，它會同時初始化 context 和 state
+            whisperContext = WhisperContext.createContextFromFile(modelPath)
+        }
+    }
 
     fun startListening() {
+        if (whisperContext == null) {
+            Log.e("SpeechDetector", "Whisper is not initialized yet.")
+            return
+        }
         resetState()
-        // 傳入 int value 給 recorder (注意：這裡要傳 SAMPLE_RATE.value 而不是 enum 本身)
         recorder.start(SAMPLE_RATE.value, FRAME_SIZE.value)
     }
 
@@ -77,108 +99,83 @@ class SpeechDetector(context: Context) : VoiceRecorder.AudioCallback {
     private fun resetState() {
         hasSpeechStarted = false
         silenceFrameCount = 0
-        audioBuffer.reset()
         _isSpeaking.value = false
+        audioBuffer.clear()
+        // 如果您的 JNI 層有提供 reset_state 的函式，可以在此呼叫
+        // 不過根據我們的設計，新的句子會自動處理，所以這裡通常不需要做什麼
     }
 
-    // 釋放資源
     fun release() {
         stopListening()
         vad.close()
+        runBlocking { whisperContext?.release() }
+        whisperContext = null
+        whisperDispatcher.close()
     }
 
+    // 由 VoiceRecorder 線程呼叫
     override fun onAudio(audioData: ShortArray) {
-        // 1. VAD 判斷當前 Frame 是否為人聲
         val isCurrentSpeech = vad.isSpeech(audioData)
 
         if (isCurrentSpeech) {
-            // --- 偵測到人聲 ---
-            silenceFrameCount = 0 // 重置靜音計數
-
+            silenceFrameCount = 0
             if (!hasSpeechStarted) {
                 hasSpeechStarted = true
                 _isSpeaking.value = true
-                audioBuffer.reset()
-
                 onSpeechStart?.invoke()
             }
+            // 將音訊數據加入緩衝區
+            audioBuffer.addAll(convertPcm16bitToPcm32bitFloat(audioData).toList())
 
-            // 寫入數據
-            writeShortsToStream(audioData)
-
+            // 當緩衝區中的數據足夠長時，進行分塊處理
+            while (audioBuffer.size >= AUDIO_STEP_SAMPLES) {
+                val chunkToProcess = audioBuffer.subList(0, AUDIO_STEP_SAMPLES).toFloatArray()
+                streamAudioChunk(chunkToProcess, isSpeechEnding = false)
+                audioBuffer.subList(0, AUDIO_STEP_SAMPLES).clear()
+            }
         } else {
-            // --- 偵測到靜音 ---
             if (hasSpeechStarted) {
                 silenceFrameCount++
-
-                // 靜音期間也寫入數據，避免語句尾端被切斷
-                writeShortsToStream(audioData)
-
-                // 檢查是否達到結束閾值
                 if (silenceFrameCount >= MAX_SILENCE_FRAMES) {
-                    // --- 對話結束 ---
+                    // 語音結束，處理緩衝區中剩餘的音訊
+                    if (audioBuffer.isNotEmpty()) {
+                        val remainingAudio = audioBuffer.toFloatArray()
+                        streamAudioChunk(remainingAudio, isSpeechEnding = true)
+                        audioBuffer.clear()
+                    } else {
+                        // 即使沒有剩餘音訊，也發送一個結束信號以清空 Whisper 內部狀態
+                        streamAudioChunk(floatArrayOf(), isSpeechEnding = true)
+                    }
+                    // 重設狀態
                     hasSpeechStarted = false
                     _isSpeaking.value = false
-
-                    val finalAudio = audioBuffer.toByteArray()
-                    audioBuffer.reset()
-
-                    // 重置 silenceFrameCount 以防連續觸發
-                    silenceFrameCount = 0
-
-                    // 將 PCM 轉為 WAV 格式
-                    val wavAudio = createWavByteArray(finalAudio)
-
-                    // 觸發回調 (傳出完整的 WAV ByteArray)
-                    onSpeechCompleted?.invoke(wavAudio)
+                    onSpeechCompleted?.invoke()
                 }
             }
         }
     }
 
-    private fun createWavByteArray(pcmData: ByteArray): ByteArray {
-        val dataSize = pcmData.size
-        val sampleRate = SAMPLE_RATE.value
-        val numChannels = 1 // Mono
-        val bitsPerSample = 16 // PCM 16-bit
-        val byteRate = sampleRate * numChannels * bitsPerSample / 8
-        val blockAlign = numChannels * bitsPerSample / 8
-        val chunkSize = 36 + dataSize
+    // 運行在單一線程的 whisperDispatcher 上
+    private fun streamAudioChunk(floatAudio: FloatArray, isSpeechEnding: Boolean) {
+        if (whisperContext == null) return
 
-        val header = ByteBuffer.allocate(44)
-        header.order(ByteOrder.LITTLE_ENDIAN)
+        scope.launch(whisperDispatcher) {
+            // 呼叫我們在 JNI 中新的串流函式
+            val result = whisperContext?.streamTranscribeData(floatAudio)
 
-        // RIFF chunk
-        header.put("RIFF".toByteArray())
-        header.putInt(chunkSize)
-        header.put("WAVE".toByteArray())
+            // 新的 JNI 函式會回傳辨識到的文字片段
+            if (!result.isNullOrEmpty()) {
+                onSpeechTranscribed?.invoke(result)
+            }
 
-        // "fmt " sub-chunk
-        header.put("fmt ".toByteArray())
-        header.putInt(16) // Subchunk1Size for PCM
-        header.putShort(1) // AudioFormat, 1 for PCM
-        header.putShort(numChannels.toShort())
-        header.putInt(sampleRate)
-        header.putInt(byteRate)
-        header.putShort(blockAlign.toShort())
-        header.putShort(bitsPerSample.toShort())
-
-        // "data" sub-chunk
-        header.put("data".toByteArray())
-        header.putInt(dataSize)
-
-        val wavStream = ByteArrayOutputStream()
-        wavStream.write(header.array())
-        wavStream.write(pcmData)
-
-        return wavStream.toByteArray()
+            // 如果這是最後一個音訊塊，觸發 onDone
+            if (isSpeechEnding) {
+                onDone?.invoke()
+            }
+        }
     }
 
-    private fun writeShortsToStream(shorts: ShortArray) {
-        // 將 ShortArray (PCM 16bit) 轉為 ByteArray (Little Endian)
-        val byteBuffer = ByteBuffer.allocate(shorts.size * 2)
-        byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        shorts.forEach { byteBuffer.putShort(it) }
-        audioBuffer.write(byteBuffer.array())
+    private fun convertPcm16bitToPcm32bitFloat(pcmData: ShortArray): FloatArray {
+        return FloatArray(pcmData.size) { i -> pcmData[i] / 32768.0f }
     }
 }
