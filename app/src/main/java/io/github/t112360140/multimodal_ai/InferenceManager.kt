@@ -35,7 +35,7 @@ object InferenceManager {
                     modelPath = modelPath, // Replace with your model path
                     backend = if(gpu_backend) Backend.GPU else Backend.CPU,
                     visionBackend = Backend.GPU,
-                    audioBackend = Backend.CPU,
+                    audioBackend = null, // Backend.CPU,
                     cacheDir = context.cacheDir.path
                 )
 

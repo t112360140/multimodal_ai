@@ -24,13 +24,13 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
-            android:text="這是一個測試文字"
+            android:text="Multimodal AI"
             android:textAlignment="center"
             android:textSize="32dp" />
 
         <Space
             android:layout_width="match_parent"
-            android:layout_height="10dp" />
+            android:layout_height="30dp" />
 
         <ScrollView
             android:layout_width="match_parent"
@@ -80,6 +80,48 @@
                             app:srcCompat="@drawable/download" />
                     </LinearLayout>
 
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="10dp" />
+
+                <LinearLayout
+                    android:layout_width="300dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/textView4"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="模型選擇(STT):"
+                        android:textSize="18dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="horizontal">
+
+                        <Spinner
+                            android:id="@+id/model_name_stt"
+                            android:layout_width="220dp"
+                            android:layout_height="48dp" />
+
+                        <Space
+                            android:layout_width="10dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1" />
+
+                        <ImageButton
+                            android:id="@+id/download_btn_stt"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:backgroundTint="#9DF0F0F0"
+                            android:scaleType="centerCrop"
+                            android:tint="#000000"
+                            app:srcCompat="@drawable/download" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <Space
@@ -142,7 +184,7 @@
 
                 <Space
                     android:layout_width="match_parent"
-                    android:layout_height="10dp" />
+                    android:layout_height="30dp" />
 
                 <LinearLayout
                     android:layout_width="wrap_content"

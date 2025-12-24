@@ -52,15 +52,17 @@ class MainActivity2 : AppCompatActivity() {
     private var isTtsReady = false
     private var isLlmReady = false
 
-    private var isMicEnabled = true
+    private var isMicEnabled = false
     private var isCameraEnabled = true
 
     private lateinit var imageCapture: ImageCapture
 
     private var config: Bundle? = null;
     private var modelName: String = ""
+    private var whisperModelPath: String = ""
     private var systmMessage:String = ""
     private var UseTts: Boolean = true
+    private var sttString: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,9 +87,10 @@ class MainActivity2 : AppCompatActivity() {
         val model_output_scroll = findViewById<ScrollView>(R.id.model_output_scroll)
 
         if(intent!=null) config = intent.extras
-        modelName = config?.getString("modelName", "").toString()
-        systmMessage = config?.getString("systmMessage", getString(R.string.default_system_message)).toString()
-        UseTts = config?.getBoolean("UseTts", true) == true
+        modelName = config?.getString("modelName") ?: ""
+        whisperModelPath = config?.getString("whisperModelPath") ?: ""
+        systmMessage = config?.getString("systmMessage") ?: getString(R.string.default_system_message)
+        UseTts = config?.getBoolean("UseTts", true) ?: true
 
 
 
@@ -115,11 +118,13 @@ class MainActivity2 : AppCompatActivity() {
             }
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
+                    Log.i("TTS", "Start!")
                     runOnUiThread {
                         speechDetector.stopListening()
                     }
                 }
                 override fun onDone(utteranceId: String?) {
+                    Log.i("TTS", "Done!")
                     runOnUiThread {
                         if (isMicEnabled) {
                             speechDetector.startListening()
@@ -127,6 +132,7 @@ class MainActivity2 : AppCompatActivity() {
                     }
                 }
                 override fun onError(utteranceId: String?) {
+                    Log.e("TTS", "Error occurred!")
                     runOnUiThread {
                         if (isMicEnabled) {
                             speechDetector.startListening()
@@ -136,40 +142,43 @@ class MainActivity2 : AppCompatActivity() {
             })
         }
 
-        speechDetector = SpeechDetector(this)
-        speechDetector.onSpeechCompleted = { audioData ->
-            if (audioData == null || audioData.isEmpty()) {
-                runOnUiThread {
-                    model_output.text = "Waiting..."
-                }
-            }else{
-                if (isMicEnabled && isLlmReady) {
-                    runOnUiThread { model_output.text = "Thinking..." }
-                    speechDetector.stopListening()
-
-                    if (isCameraEnabled && ::imageCapture.isInitialized) {
-                        imageCapture.takePicture(
-                            ContextCompat.getMainExecutor(this),
-                            object : ImageCapture.OnImageCapturedCallback() {
-                                override fun onCaptureSuccess(image: ImageProxy) {
-                                    val bitmap = image.toBitmap()
-                                    image.close()
-                                    sendMessageToInference(bitmap.toByteArray(), audioData)
-                                }
-
-                                override fun onError(exception: ImageCaptureException) {
-                                    Log.e("CameraX", "Image capture failed.", exception)
-                                    sendMessageToInference(null, audioData)
-                                }
+        speechDetector = SpeechDetector(this, whisperModelPath)
+        speechDetector.onSpeechCompleted = {
+            runOnUiThread { model_output.text = sttString + "\n\nThinking..." }
+            speechDetector.stopListening()
+        }
+        speechDetector.onSpeechTranscribed = { text->
+            if(isMicEnabled && isLlmReady){
+                sttString += text
+                runOnUiThread { model_output.text = sttString }
+            }
+        }
+        speechDetector.onDone = {
+            if (isMicEnabled) {
+                runOnUiThread { model_output.text = sttString}
+                if (isCameraEnabled && ::imageCapture.isInitialized) {
+                    imageCapture.takePicture(
+                        ContextCompat.getMainExecutor(this),
+                        object : ImageCapture.OnImageCapturedCallback() {
+                            override fun onCaptureSuccess(image: ImageProxy) {
+                                val bitmap = image.toBitmap()
+                                image.close()
+                                sendMessageToInference(sttString, bitmap.toByteArray(), null)
                             }
-                        )
-                    } else {
-                        sendMessageToInference(null, audioData)
-                    }
+
+                            override fun onError(exception: ImageCaptureException) {
+                                Log.e("CameraX", "Image capture failed.", exception)
+                                sendMessageToInference(sttString, null, null)
+                            }
+                        }
+                    )
+                } else {
+                    sendMessageToInference(sttString, null, null)
                 }
             }
         }
         speechDetector.onSpeechStart = {
+            sttString=""
             if (isMicEnabled && isLlmReady) {
                 runOnUiThread {
                     model_output.text = "Listening..."
@@ -228,11 +237,11 @@ class MainActivity2 : AppCompatActivity() {
         }
     }
 
-    private fun sendMessageToInference(imageData: ByteArray?, audioData: ByteArray) {
+    private fun sendMessageToInference(textData: String?, imageData: ByteArray?, audioData: ByteArray?) {
         val model_output = findViewById<TextView>(R.id.model_output)
         val model_output_scroll = findViewById<ScrollView>(R.id.model_output_scroll)
         var startOutput = false
-        InferenceManager.sendMessage(null, imageData, audioData, onMessage = {message ->
+        InferenceManager.sendMessage(textData, imageData, audioData, onMessage = {message ->
             runOnUiThread {
                 if(!startOutput) {
                     startOutput = true
@@ -247,10 +256,12 @@ class MainActivity2 : AppCompatActivity() {
         }, onDone = {
             runOnUiThread {
                 if(UseTts) speakText(model_output.text.toString())
+                if(isMicEnabled&&isLlmReady) speechDetector.startListening()
             }
         }, onError = {
             runOnUiThread {
                 model_output.append("\n\n模型輸出錯誤!")
+                if(isMicEnabled&&isLlmReady) speechDetector.startListening()
             }
         })
     }
@@ -301,7 +312,7 @@ class MainActivity2 : AppCompatActivity() {
     }
 
     private fun speakText(text: String) {
-        if(isTtsReady)
+        if(isTtsReady && !isFinishing)
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "utteranceId")
     }
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
@@ -325,7 +336,7 @@ class MainActivity2 : AppCompatActivity() {
         super.onDestroy()
 
         InferenceManager.stop()
-        if (UseTts && ::tts.isInitialized) {
+        if (::tts.isInitialized) {
             tts.stop()
             tts.shutdown()
         }
