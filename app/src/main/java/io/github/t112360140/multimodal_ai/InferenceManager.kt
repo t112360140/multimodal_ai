@@ -2,40 +2,33 @@ package io.github.t112360140.multimodal_ai
 
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.BenchmarkInfo
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.SamplerConfig
-
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
-
-import com.google.ai.edge.litertlm.Tool
-import com.google.ai.edge.litertlm.ToolParam
-
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object InferenceManager {
     private var engine: Engine? = null
     private var conversation : Conversation? = null
-    private var modelLoaded = false;
+    private var modelLoaded = false
 
-
-    suspend fun loadModel(context: Context, modelPath: String, gpu_backend: Boolean=false): Boolean {
+    suspend fun loadModel(context: Context, modelPath: String, gpu_backend: Boolean=false, enable_audio: Boolean=false): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 if (engine != null) return@withContext true
 
+                // 修改點：為了支援 sttType=1 (直接語音輸入 LLM)，必須開啟 audioBackend
                 val engineConfig = EngineConfig(
-                    modelPath = modelPath, // Replace with your model path
+                    modelPath = modelPath,
                     backend = if(gpu_backend) Backend.GPU else Backend.CPU,
                     visionBackend = Backend.GPU,
-                    audioBackend = null, // Backend.CPU,
+                    audioBackend = if(enable_audio) Backend.CPU else null,
                     cacheDir = context.cacheDir.path
                 )
 
@@ -58,7 +51,7 @@ object InferenceManager {
             val conversationConfig = ConversationConfig(
                 systemMessage = Message.of(systemMessage),
                 samplerConfig = SamplerConfig(topK = topK, topP = topP, temperature = temperature, seed = seed),
-
+                // tools = listOf(Tools()) // 如果你有 Tools 類別可以加回來
             )
 
             conversation = engine?.createConversation(conversationConfig)
@@ -96,7 +89,6 @@ object InferenceManager {
             }
 
             conversation?.sendMessageAsync(message, callback)
-
             return true
         }
         return false
@@ -106,13 +98,11 @@ object InferenceManager {
         conversation?.cancelProcess()
     }
 
-    // 釋放資源 (通常在 App 關閉時)
     fun close() {
         conversation?.close()
         conversation = null
         engine?.close()
         engine = null
-
         modelLoaded = false
     }
 }
