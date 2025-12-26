@@ -40,6 +40,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var use_tts: Switch
     private lateinit var system_message: EditText
 
+    private lateinit var gemma_stt: RadioButton
+    private lateinit var whisper_stt: RadioButton
+    private lateinit var api_stt: RadioButton
+
     private lateinit var info_tv: TextView
     private lateinit var start_btn: Button
 
@@ -62,6 +66,10 @@ class MainActivity : AppCompatActivity() {
         system_message = findViewById<EditText>(R.id.system_message)
         info_tv = findViewById<TextView>(R.id.info)
         start_btn = findViewById<Button>(R.id.start_btn)
+
+        gemma_stt = findViewById<RadioButton>(R.id.use_gemma_as_stt)
+        whisper_stt = findViewById<RadioButton>(R.id.use_whisper_as_stt)
+        api_stt = findViewById<RadioButton>(R.id.use_api_as_stt)
 
 
         modelDownloader = ModelDownloader(this)
@@ -215,13 +223,14 @@ class MainActivity : AppCompatActivity() {
                 showInfo(this, "模型載入中...", 1, Toast.LENGTH_SHORT)
                 lifecycleScope.launch {
                     val path = modelDownloader.getModelPath(model_path)
-                    val success = InferenceManager.loadModel(this@MainActivity, path, use_gpu.isChecked)
+                    val success = InferenceManager.loadModel(this@MainActivity, path, use_gpu.isChecked, gemma_stt.isChecked)
 
                     if (success) {
                         runOnUiThread { showInfo(this@MainActivity, "模型載入成功!", 1, Toast.LENGTH_SHORT) }
                         val intent = Intent(this@MainActivity, MainActivity2::class.java)
                         val bundle = Bundle()
                         bundle.putString("modelName", model_name_select.selectedItem.toString())
+                        bundle.putInt("sttType", if(gemma_stt.isChecked) 1 else if(whisper_stt.isChecked) 2 else 3)
                         bundle.putString("whisperModelPath", model_path_stt)
                         bundle.putBoolean("UseTts", use_tts.isChecked)
                         bundle.putString("systmMessage",
@@ -260,7 +269,7 @@ class MainActivity : AppCompatActivity() {
             download_btn_stt.setImageResource(R.drawable.delect)
         }else{
             download_btn_stt.setImageResource(R.drawable.download)
-            model_ready = false
+            if(whisper_stt.isChecked) model_ready = false
         }
         start_btn.setEnabled(model_ready)
     }
