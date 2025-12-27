@@ -1,0 +1,46 @@
+{
+    "llm": [
+        {
+            "name": "gemma-3n-E2B-it",
+            "path": "models/gemma-3n-E2B-it-int4.litertlm",
+            "url": "https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/gemma-3n-E2B-it/gemma-3n-E2B-it-int4.litertlm"
+        },
+        {
+            "name": "gemma-3n-E4B-it",
+            "path": "models/gemma-3n-E4B-it-int4.litertlm",
+            "url": "https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/gemma-3n-E4B-it/gemma-3n-E4B-it-int4.litertlm"
+        }
+    ],
+    "whisper": [
+        {
+            "name": "Whisper-Tiny-Q5",
+            "path": "models/ggml-tiny-q5_1.bin",
+            "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin"
+        },
+        {
+            "name": "Whisper-Base-tw-Q5",
+            "path": "models/ggml-model-whisper-base.tw-q5_1.bin",
+            "url": "https://huggingface.co/Qwe1325/whisper-base-tw-ggml/resolve/main/ggml-model-whisper-base.tw-q5_1.bin"
+        },
+        {
+            "name": "Whisper-Base-tw",
+            "path": "models/ggml-model-whisper-base.tw.bin",
+            "url": "https://huggingface.co/Qwe1325/whisper-base-tw-ggml/resolve/main/ggml-model-whisper-base.tw.bin"
+        },
+        {
+            "name": "Whisper-Tiny",
+            "path": "models/ggml-tiny.bin",
+            "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+        },
+        {
+            "name": "Whisper-Base",
+            "path": "models/ggml-base.bin",
+            "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+        },
+        {
+            "name": "Whisper-Large-Q5",
+            "path": "models/ggml-large-q5_0.bin",
+            "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-q5_0.bin"
+        }
+    ]
+}
