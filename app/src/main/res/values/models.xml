@@ -2,44 +2,27 @@
 <resources>
     <string-array name="models_name_llm">
         <item>gemma-3n-E2B-it</item>
-        <item>gemma-3n-E4B-it</item>
     </string-array>
 
     <string-array name="models_path_llm">
         <item>models/gemma-3n-E2B-it-int4.litertlm</item>
-        <item>models/gemma-3n-E4B-it-int4.litertlm</item>
     </string-array>
 
     <string-array name="models_url_llm">
         <item>https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/gemma-3n-E2B-it/gemma-3n-E2B-it-int4.litertlm</item>
-        <item>https://huggingface.co/Qwe1325/gemma-3n-it-litert-lm/resolve/main/gemma-3n-E4B-it/gemma-3n-E4B-it-int4.litertlm</item>
     </string-array>
 
     <string-array name="models_name_whisper">
         <item>Whisper-Tiny-Q5</item>
-        <item>Whisper-Base-tw-Q5</item>
-        <item>Whisper-Base-tw</item>
-        <item>Whisper-Tiny</item>
-        <item>Whisper-Base</item>
-        <item>Whisper-Large-Q5</item>
     </string-array>
 
     <string-array name="models_path_whisper">
         <item>models/ggml-tiny-q5_1.bin</item>
-        <item>models/ggml-model-whisper-base.tw-q5_1.bin</item>
-        <item>models/ggml-model-whisper-base.tw.bin</item>
-        <item>models/ggml-tiny.bin</item>
-        <item>models/ggml-base.bin</item>
-        <item>models/ggml-large-q5_0.bin</item>
 
     </string-array>
 
     <string-array name="models_url_whisper">
         <item>https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin</item>
-        <item>https://huggingface.co/Qwe1325/whisper-base-tw-ggml/resolve/main/ggml-model-whisper-base.tw-q5_1.bin</item>
-        <item>https://huggingface.co/Qwe1325/whisper-base-tw-ggml/resolve/main/ggml-model-whisper-base.tw.bin</item>
-        <item>https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin</item>
-        <item>https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin</item>
-        <item>https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-q5_0.bin</item>
     </string-array>
+
 </resources>
