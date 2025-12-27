@@ -26,8 +26,26 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
+data class Model(
+    @SerializedName("name") val name: String,
+    @SerializedName("path") val path: String,
+    @SerializedName("url") val url: String
+)
+
+data class Models(
+    @SerializedName("llm") val llm: List<Model>,
+    @SerializedName("whisper") val whisper: List<Model>
+)
 
 class MainActivity : AppCompatActivity() {
     private lateinit var modelDownloader: ModelDownloader
@@ -46,6 +64,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var info_tv: TextView
     private lateinit var start_btn: Button
+
+    private var llmModels: List<Model> = emptyList()
+    private var whisperModels: List<Model> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,19 +92,13 @@ class MainActivity : AppCompatActivity() {
         whisper_stt = findViewById<RadioButton>(R.id.use_whisper_as_stt)
         api_stt = findViewById<RadioButton>(R.id.use_api_as_stt)
 
-
         modelDownloader = ModelDownloader(this)
 
-        model_name_select.adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.models_name_llm,
-            android.R.layout.simple_spinner_item
-        ).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
+        fetchModels()
+
         model_name_select.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
-                parent: AdapterView<*>,
+                parent: AdapterView<*>?,
                 view: View?,
                 position: Int,
                 id: Long
@@ -91,68 +106,20 @@ class MainActivity : AppCompatActivity() {
                 updateDownloadStatus()
             }
 
-            override fun onNothingSelected(p0: AdapterView<*>?) {
-
-            }
+            override fun onNothingSelected(p0: AdapterView<*>?) {}
         }
 
-        download_btn.setOnClickListener { view ->
+        download_btn.setOnClickListener {
             val position = model_name_select.selectedItemPosition
-            val model_name = resources.getStringArray(R.array.models_name_llm)[position]
-            val model_path = resources.getStringArray(R.array.models_path_llm)[position]
-            val model_url = resources.getStringArray(R.array.models_url_llm)[position]
-
-            if(!modelDownloader.isModelDownloaded(model_path)){
-                val builder = AlertDialog.Builder(this)
-                builder.setTitle("模型下載")
-                builder.setMessage("確定下載模型: $model_name ?")
-
-                builder.setPositiveButton("下載") { dialog: DialogInterface, which: Int ->
-                    showInfo(this, "開始下載模型!", 1, Toast.LENGTH_SHORT)
-                    modelDownloader.downloadModel(model_path, model_url, {
-                        showInfo(this, "模型下載完成!", 1, Toast.LENGTH_SHORT)
-                        updateDownloadStatus()
-                    })
-                    dialog.dismiss() // Dismiss the dialog after the button is clicked
-                }
-                builder.setNegativeButton("取消") { dialog: DialogInterface, which: Int ->
-                    dialog.dismiss()
-                }
-                val alertDialog: AlertDialog = builder.create()
-                alertDialog.show()
-            }else{
-                val builder = AlertDialog.Builder(this)
-                builder.setTitle("刪除模型")
-                builder.setMessage("確定刪除模型: $model_name ?")
-
-                builder.setPositiveButton("刪除") { dialog: DialogInterface, which: Int ->
-                    if(modelDownloader.removeModel(model_path)) {
-                        showInfo(this, "模型刪除成功!", 1, Toast.LENGTH_SHORT)
-                    }else{
-                        showInfo(this, "模型刪除失敗!", 3, Toast.LENGTH_SHORT)
-                    }
-                    updateDownloadStatus()
-
-                    dialog.dismiss() // Dismiss the dialog after the button is clicked
-                }
-                builder.setNegativeButton("取消") { dialog: DialogInterface, which: Int ->
-                    dialog.dismiss()
-                }
-                val alertDialog: AlertDialog = builder.create()
-                alertDialog.show()
+            if (position >= 0 && position < llmModels.size) {
+                val model = llmModels[position]
+                handleModelDownload(model)
             }
         }
 
-        model_name_select_stt.adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.models_name_whisper,
-            android.R.layout.simple_spinner_item
-        ).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
         model_name_select_stt.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
-                parent: AdapterView<*>,
+                parent: AdapterView<*>?,
                 view: View?,
                 position: Int,
                 id: Long
@@ -160,128 +127,192 @@ class MainActivity : AppCompatActivity() {
                 updateDownloadStatus()
             }
 
-            override fun onNothingSelected(p0: AdapterView<*>?) {
-
-            }
+            override fun onNothingSelected(p0: AdapterView<*>?) {}
         }
 
-        download_btn_stt.setOnClickListener { view ->
+        download_btn_stt.setOnClickListener {
             val position = model_name_select_stt.selectedItemPosition
-            val model_name = resources.getStringArray(R.array.models_name_whisper)[position]
-            val model_path = resources.getStringArray(R.array.models_path_whisper)[position]
-            val model_url = resources.getStringArray(R.array.models_url_whisper)[position]
-
-            if(!modelDownloader.isModelDownloaded(model_path)){
-                val builder = AlertDialog.Builder(this)
-                builder.setTitle("模型下載")
-                builder.setMessage("確定下載模型: $model_name ?")
-
-                builder.setPositiveButton("下載") { dialog: DialogInterface, which: Int ->
-                    showInfo(this, "開始下載模型!", 1, Toast.LENGTH_SHORT)
-                    modelDownloader.downloadModel(model_path, model_url, {
-                        showInfo(this, "模型下載完成!", 1, Toast.LENGTH_SHORT)
-                        updateDownloadStatus()
-                    })
-                    dialog.dismiss() // Dismiss the dialog after the button is clicked
-                }
-                builder.setNegativeButton("取消") { dialog: DialogInterface, which: Int ->
-                    dialog.dismiss()
-                }
-                val alertDialog: AlertDialog = builder.create()
-                alertDialog.show()
-            }else{
-                val builder = AlertDialog.Builder(this)
-                builder.setTitle("刪除模型")
-                builder.setMessage("確定刪除模型: $model_name ?")
-
-                builder.setPositiveButton("刪除") { dialog: DialogInterface, which: Int ->
-                    if(modelDownloader.removeModel(model_path)) {
-                        showInfo(this, "模型刪除成功!", 1, Toast.LENGTH_SHORT)
-                    }else{
-                        showInfo(this, "模型刪除失敗!", 3, Toast.LENGTH_SHORT)
-                    }
-                    updateDownloadStatus()
-
-                    dialog.dismiss() // Dismiss the dialog after the button is clicked
-                }
-                builder.setNegativeButton("取消") { dialog: DialogInterface, which: Int ->
-                    dialog.dismiss()
-                }
-                val alertDialog: AlertDialog = builder.create()
-                alertDialog.show()
+            if (position >= 0 && position < whisperModels.size) {
+                val model = whisperModels[position]
+                handleModelDownload(model)
             }
         }
 
-        start_btn.setOnClickListener { view ->
-            val position = model_name_select.selectedItemPosition
-            val model_path = resources.getStringArray(R.array.models_path_llm)[position]
-            val position_stt = model_name_select_stt.selectedItemPosition
-            val model_path_stt = resources.getStringArray(R.array.models_path_whisper)[position_stt]
+        start_btn.setOnClickListener {
+            val llmPosition = model_name_select.selectedItemPosition
+            val sttPosition = model_name_select_stt.selectedItemPosition
 
-            start_btn.setEnabled(false)
-            if(modelDownloader.isModelDownloaded(model_path)) {
-                showInfo(this, "模型載入中...", 1, Toast.LENGTH_SHORT)
-                lifecycleScope.launch {
-                    val path = modelDownloader.getModelPath(model_path)
-                    val success = InferenceManager.loadModel(this@MainActivity, path, use_gpu.isChecked, gemma_stt.isChecked)
+            if (llmPosition >= 0 && llmPosition < llmModels.size && sttPosition >=0 && sttPosition < whisperModels.size) {
+                val llmModel = llmModels[llmPosition]
+                val sttModel = whisperModels[sttPosition]
 
-                    if (success) {
-                        runOnUiThread { showInfo(this@MainActivity, "模型載入成功!", 1, Toast.LENGTH_SHORT) }
-                        val intent = Intent(this@MainActivity, MainActivity2::class.java)
-                        val bundle = Bundle()
-                        bundle.putString("modelName", model_name_select.selectedItem.toString())
-                        bundle.putInt("sttType", if(gemma_stt.isChecked) 1 else if(whisper_stt.isChecked) 2 else 3)
-                        bundle.putString("whisperModelPath", model_path_stt)
-                        bundle.putBoolean("UseTts", use_tts.isChecked)
-                        bundle.putString("systmMessage",
-                            system_message.text.toString().ifEmpty { getString(R.string.default_system_message) })
+                start_btn.isEnabled = false
+                if (modelDownloader.isModelDownloaded(llmModel.path)) {
+                    showInfo(this, "模型載入中...", 1, Toast.LENGTH_SHORT)
+                    lifecycleScope.launch {
+                        val path = modelDownloader.getModelPath(llmModel.path)
+                        val success = InferenceManager.loadModel(
+                            this@MainActivity,
+                            path,
+                            use_gpu.isChecked,
+                            gemma_stt.isChecked
+                        )
 
-                        intent.putExtras(bundle)
+                        if (success) {
+                            runOnUiThread { showInfo(this@MainActivity, "模型載入成功!", 1, Toast.LENGTH_SHORT) }
+                            val intent = Intent(this@MainActivity, MainActivity2::class.java)
+                            val bundle = Bundle()
+                            bundle.putString("modelName", llmModel.name)
+                            bundle.putInt(
+                                "sttType",
+                                if (gemma_stt.isChecked) 1 else if (whisper_stt.isChecked) 2 else 3
+                            )
+                            bundle.putString("whisperModelPath", sttModel.path)
+                            bundle.putBoolean("UseTts", use_tts.isChecked)
+                            bundle.putString(
+                                "systmMessage",
+                                system_message.text.toString()
+                                    .ifEmpty { getString(R.string.default_system_message) })
 
-                        startActivityForResult(intent, 9)
-                    } else {
-                        runOnUiThread { showInfo(this@MainActivity, "模型載入失敗!", 3, Toast.LENGTH_SHORT) }
-                        runOnUiThread { updateDownloadStatus() }
+                            intent.putExtras(bundle)
+
+                            startActivityForResult(intent, 9)
+                        } else {
+                            runOnUiThread { showInfo(this@MainActivity, "模型載入失敗!", 3, Toast.LENGTH_SHORT) }
+                            runOnUiThread { updateDownloadStatus() }
+                        }
                     }
+                } else {
+                    showInfo(this, "模型不存在!", 3, Toast.LENGTH_SHORT)
+                    updateDownloadStatus()
                 }
-            }else{
-                showInfo(this, "模型不存在!", 3, Toast.LENGTH_SHORT)
-                updateDownloadStatus()
             }
         }
     }
 
-    fun updateDownloadStatus(){
-        val position = model_name_select.selectedItemPosition
-        val model_path = resources.getStringArray(R.array.models_path_llm)[position]
+    private fun fetchModels() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL(getString(R.string.models_list_url))
+                val connection = url.openConnection() as HttpURLConnection
+                val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                val models = Gson().fromJson(reader, Models::class.java)
+                reader.close()
+                connection.disconnect()
 
-        val position_stt = model_name_select_stt.selectedItemPosition
-        val model_path_stt = resources.getStringArray(R.array.models_path_whisper)[position_stt]
+                withContext(Dispatchers.Main) {
+                    llmModels = models.llm
+                    whisperModels = models.whisper
+                    updateSpinners()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "無法抓取模型列表，將使用預設列表", Toast.LENGTH_LONG).show()
+                    loadDefaultModels()
+                }
+            }
+        }
+    }
 
-        var model_ready = true
-        if(modelDownloader.isModelDownloaded(model_path)){
+    private fun loadDefaultModels() {
+        val llmNames = resources.getStringArray(R.array.models_name_llm)
+        val llmPaths = resources.getStringArray(R.array.models_path_llm)
+        val llmUrls = resources.getStringArray(R.array.models_url_llm)
+        llmModels = llmNames.mapIndexed { index, name ->
+            Model(name, llmPaths[index], llmUrls[index])
+        }
+
+        val whisperNames = resources.getStringArray(R.array.models_name_whisper)
+        val whisperPaths = resources.getStringArray(R.array.models_path_whisper)
+        val whisperUrls = resources.getStringArray(R.array.models_url_whisper)
+        whisperModels = whisperNames.mapIndexed { index, name ->
+            Model(name, whisperPaths[index], whisperUrls[index])
+        }
+        updateSpinners()
+    }
+
+    private fun updateSpinners() {
+        val llmAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, llmModels.map { it.name })
+        llmAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        model_name_select.adapter = llmAdapter
+
+        val whisperAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, whisperModels.map { it.name })
+        whisperAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        model_name_select_stt.adapter = whisperAdapter
+        updateDownloadStatus()
+    }
+
+    fun updateDownloadStatus() {
+        if (llmModels.isEmpty() || whisperModels.isEmpty()) return
+
+        val llmPosition = model_name_select.selectedItemPosition
+        val sttPosition = model_name_select_stt.selectedItemPosition
+
+        var modelReady = true
+        if (modelDownloader.isModelDownloaded(llmModels[llmPosition].path)) {
             download_btn.setImageResource(R.drawable.delect)
-        }else{
+        } else {
             download_btn.setImageResource(R.drawable.download)
-            model_ready = false
+            modelReady = false
         }
-        if(modelDownloader.isModelDownloaded(model_path_stt)){
+        if (modelDownloader.isModelDownloaded(whisperModels[sttPosition].path)) {
             download_btn_stt.setImageResource(R.drawable.delect)
-        }else{
+        } else {
             download_btn_stt.setImageResource(R.drawable.download)
-            if(whisper_stt.isChecked) model_ready = false
+            if (whisper_stt.isChecked) modelReady = false
         }
-        start_btn.setEnabled(model_ready)
+        start_btn.isEnabled = modelReady
+    }
+    
+    private fun handleModelDownload(model: Model) {
+        if (!modelDownloader.isModelDownloaded(model.path)) {
+            val builder = AlertDialog.Builder(this)
+            builder.setTitle("模型下載")
+            builder.setMessage("確定下載模型: ${model.name} ?")
+
+            builder.setPositiveButton("下載") { dialog: DialogInterface, _: Int ->
+                showInfo(this, "開始下載模型!", 1, Toast.LENGTH_SHORT)
+                modelDownloader.downloadModel(model.path, model.url) {
+                    showInfo(this, "模型下載完成!", 1, Toast.LENGTH_SHORT)
+                    updateDownloadStatus()
+                }
+                dialog.dismiss()
+            }
+            builder.setNegativeButton("取消") { dialog: DialogInterface, _: Int ->
+                dialog.dismiss()
+            }
+            val alertDialog: AlertDialog = builder.create()
+            alertDialog.show()
+        } else {
+            val builder = AlertDialog.Builder(this)
+            builder.setTitle("刪除模型")
+            builder.setMessage("確定刪除模型: ${model.name} ?")
+
+            builder.setPositiveButton("刪除") { dialog: DialogInterface, _: Int ->
+                if (modelDownloader.removeModel(model.path)) {
+                    showInfo(this, "模型刪除成功!", 1, Toast.LENGTH_SHORT)
+                } else {
+                    showInfo(this, "模型刪除失敗!", 3, Toast.LENGTH_SHORT)
+                }
+                updateDownloadStatus()
+                dialog.dismiss()
+            }
+            builder.setNegativeButton("取消") { dialog: DialogInterface, _: Int ->
+                dialog.dismiss()
+            }
+            val alertDialog: AlertDialog = builder.create()
+            alertDialog.show()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
         logInfo("")
-        if(resultCode == RESULT_OK) {
-            if(data!=null){
-                val return_code = data.getIntExtra("RETURN", REQUEST_CODE_UNKNOW_ERROR)
-                when(return_code){
+        if (resultCode == RESULT_OK) {
+            if (data != null) {
+                val returnCode = data.getIntExtra("RETURN", REQUEST_CODE_UNKNOW_ERROR)
+                when (returnCode) {
                     REQUEST_CODE_OK -> {
                         updateDownloadStatus()
                     }
@@ -302,33 +333,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun logInfo(str: String = "", level: Int = 1) {
-        if(str.isEmpty()) {
-            info_tv.setText("")
+        if (str.isEmpty()) {
+            info_tv.text = ""
             return
         }
-        var fullText = ""
-        var foregroundSpan: ForegroundColorSpan
+        val fullText: String
+        val foregroundSpan: ForegroundColorSpan
         when (level) {
             0 -> {
                 fullText = "[ D ] $str"
-                foregroundSpan = ForegroundColorSpan(Color.BLUE);
+                foregroundSpan = ForegroundColorSpan(Color.BLUE)
             }
+
             1 -> {
                 fullText = "[ I ] $str"
-                foregroundSpan = ForegroundColorSpan(Color.GREEN);
+                foregroundSpan = ForegroundColorSpan(Color.GREEN)
             }
+
             2 -> {
                 fullText = "[ W ] $str"
-                foregroundSpan = ForegroundColorSpan(Color.YELLOW);
+                foregroundSpan = ForegroundColorSpan(Color.YELLOW)
             }
+
             else -> {
                 fullText = "[ E ] $str"
-                foregroundSpan = ForegroundColorSpan(Color.RED);
+                foregroundSpan = ForegroundColorSpan(Color.RED)
             }
         }
         val spannableString = SpannableString(fullText)
         spannableString.setSpan(foregroundSpan, 0, 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
-        info_tv.setText(spannableString)
+        info_tv.text = spannableString
+    }
+    
+    companion object {
+        const val REQUEST_CODE_OK = 0
+        const val REQUEST_CODE_INIT_ERROR = 1
+        const val REQUEST_CODE_PERMISSIONS_ERROR = 2
+        const val REQUEST_CODE_UNKNOW_ERROR = 3
     }
 }
