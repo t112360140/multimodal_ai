@@ -5,7 +5,6 @@ import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -207,7 +206,8 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "無法抓取模型列表，將使用預設列表", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity,
+                        "無法抓取模型列表，將使用預設列表", Toast.LENGTH_LONG).show()
                     loadDefaultModels()
                 }
             }

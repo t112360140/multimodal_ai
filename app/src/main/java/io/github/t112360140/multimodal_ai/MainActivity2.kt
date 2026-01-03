@@ -153,7 +153,7 @@ class MainActivity2 : AppCompatActivity() {
         // 3. Type 1 (Gemma Audio) 的音訊結果
         speechDetector.onAudioData = { audioBytes ->
             if (isMicEnabled && isLlmReady && sttType == 1) {
-                runOnUiThread { model_output.text = "Thinking (Audio)..." }
+                runOnUiThread { model_output.text = "Thinking..." }
                 captureAndSend(null, audioBytes)
             }
         }
